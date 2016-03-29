@@ -3,6 +3,7 @@ from itertools import permutations
 from PIL import Image
 import hashlib
 import numpy as np
+import sys
 
 
 mask = []
@@ -61,15 +62,15 @@ def mask_generator(n, k):
 '''
 Arguments:
     Secret image in the form of a 1D array, height and width
-    Return values:
-        shares, a list of n shares without the corresponding header information
-    Description:
-        Selects bytes from image and encrypts them according to
-        R = (Pi-1) ^ [(Pi) * K[j%16]) mod 251
-        where:
-            * R = encrypted byte
-            * P = original chosen byte [(Pi-1) = 0]
-            * K = key
+Return values:
+    shares, a list of n shares without the corresponding header information
+Description:
+    Selects bytes from image and encrypts them according to
+    R = (Pi-1) ^ [(Pi) * K[j%16]) mod 251
+    where:
+        * R = encrypted byte
+        * P = original chosen byte [(Pi-1) = 0]
+        * K = key
 '''
 def encipher(plain, height, width):
     global n, key, mask, mask_pattern_len, prev
@@ -108,14 +109,34 @@ def getImageMatrix(path):
     green = []
     blue = []
     width, height = im.size
-    for x in range(width):
-        for y in range(height):
-            R, G, B, A = pix[x, y]
+    for y in range(height):
+        for x in range(width):
+            try:
+                R, G, B, A = pix[x, y]
+            except:
+                R, G, B = pix[x, y]
             red.append(R)
             green.append(G)
             blue.append(B)
     return red, green, blue, height, width
 
+
+def saveImage(red, green, blue):
+    n = len(red)
+    h = len(red[0])
+    w = len(red[0][0])
+    images = [[[0 for j in range(w)] for k in range(h)] for i in range(n)]
+    images = [[] for i in range(n)]
+    for i in range(n):
+        for j in range(h):
+            for k in range(w):
+                t = (red[i][j][k], green[i][j][k], blue[i][j][k])
+                images[i].append(t)
+    print images[0]
+    for i in range(n):
+        im = Image.new('RGB', (w, h))
+        im.putdata(images[i])
+        im.save("./"+str(i)+".png")
 
 '''
 Arguments:
@@ -174,6 +195,22 @@ def addHeader(shares, width):
             realShares[idx][jdx][lastPos] = el
     return realShares
 
+'''
+Arguments:
+    Tuple 'pieces' containing the header pieces.
+Return value:
+    Decimal value corresponding to joined pieces.
+Description:
+    Reverses the operation seen at the bottom of page 75.
+'''
+def headerPiecesToDecimal(pieces):
+    joined = ''
+    for p in pieces:
+        s = bin(p)[2:]
+        s = "0" * (8-len(s)) + s
+        joined += s
+    return int(joined, 2)
+
 
 '''
 Arguments:
@@ -184,13 +221,108 @@ Description:
     Serves as a driver function that calls the various components of the
     implementation.
 '''
-def run():
+def encrypt(path):
     global key, n, k, mask_pattern_len
     key, n, k = getParams()
+    print "Key: " + bytes(key)
     mask_pattern_len = mask_generator(n, k)
-    red, green, blue, h, w = getImageMatrix("/home/kishor/pictures/test.png")
-    shares = encipher(red, h, w)
-    shares = addHeader(shares, w)
+    print "Mask pattern length: " + str(mask_pattern_len)
+    print "Masks:"
+    for m in mask:
+        print m
+    try:
+        red, green, blue, h, w = getImageMatrix(path)
+    except:
+        print "That's not an image!"
+        sys.exit(1)
+    redShares = encipher(red, h, w)
+    redShares = addHeader(redShares, w)
+    greenShares = encipher(green, h, w)
+    greenShares = addHeader(greenShares, w)
+    blueShares = encipher(blue, h, w)
+    blueShares = addHeader(blueShares, w)
+    return redShares, greenShares, blueShares
 
+
+'''
+Arguments:
+    Share numbers to be tried, threshold k
+Return values:
+    Reconstructed header
+Description:
+	Uses linear algebra ( AX = B => X = (A^-1)*B ) to recover header from k shares.
+'''
+def reconstructHeader(shareNumbers, k):
+    shares = []
+    for num in shareNumbers:
+        r, g, b, h, w = getImageMatrix(num+".png")
+        d = {
+            'r': r,
+            'g': g,
+            'b': b,
+            'h': h,
+            'w': w
+        }
+        shares.append(d)
+        '''
+        Now, for each R (and G and B), take last column.
+        Obtain the first k values in this column.
+        Convert to bits, concat, convert to decimal. --> X
+        RHS = column (X's)
+        LHS = first k numbers of each row of image
+        solve for header
+        '''
+    parts = [[] for i in range(k)]
+    for idx, s in enumerate(shares):
+        a = s['r']
+        for count in range(k+1):
+            parts[idx].append(a[(count+1)*w-1])
+    # Putting them in order of shares...
+    parts.sort(key=lambda x: int(x[0]))
+    rhs = [[] for i in range(k)]
+    for idx, p in enumerate(parts):
+        print p
+        rhs[idx].append(headerPiecesToDecimal(p[1:]))
+    rhs = np.matrix(rhs)
+    print rhs
+    lhs = [[] for i in range(k)]
+    for idx, s in enumerate(shares):
+        a = s['r']
+        count = 0
+        i = 0
+        while count < k:
+            if a[i] != 0:
+                lhs[idx].append(a[i])
+                count += 1
+            i += 1
+    lhs = np.matrix(lhs)
+    print lhs
+    inv = np.linalg.inv(lhs)
+    prod = inv * rhs
+    return prod
+
+'''
+Arguments:
+    None
+Return values:
+    None
+Description:
+    "Main" function, drives the entire program
+'''
 if __name__ == "__main__":
-    run()
+    if len(sys.argv) < 2:
+        print "Usage: ./main.py -[e|d] <path>"
+        sys.exit(1)
+    if sys.argv[1] == "-e":
+        path = sys.argv[2]
+        redShares, greenShares, blueShares = encrypt(path)
+        saveImage(redShares, greenShares, blueShares)
+    elif sys.argv[1] == "-d":
+        k = int(raw_input("Enter the value of k: "))
+        shareNumbers = raw_input("Enter k share numbers:\n").split(' ')[:k]
+        header = reconstructHeader(shareNumbers, k)
+        print header
+        # n = float(header[0])
+        # k = float(header[1])
+        # print n, k
+        # mask_pattern_len = mask_generator(n, k)

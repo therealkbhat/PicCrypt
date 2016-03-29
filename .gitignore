@@ -1,2 +1,6 @@
 # Ignore python bytecode
 *.pyc
+# Ignore image files
+*.png
+*.jpg
+*.bmp
