@@ -14,6 +14,7 @@ prev = 0
 n = 0
 k = 0
 headerStructure = []
+zeroCount = []
 
 '''
 Arguments:
@@ -153,18 +154,19 @@ Description:
     shares with header info attached.
 '''
 def addHeader(shares, width, offset):
-    global key
+    global key, zeroCount
     temp = []
     header_matrix = np.zeros(shape=(n, k))
     for i in range(len(shares)):
         count = 1
-        # Temporary
-        idx = offset + 1
+        idx = offset + zeroCount[i]
         while count <= k:
             m = shares[i][idx]
             if (m != 0):
                 temp.append(m)
                 count += 1
+            if (m == 0):
+                zeroCount[i] += 1
             idx += 1
         header_matrix[i] = temp
         temp = []
@@ -189,6 +191,8 @@ def addHeader(shares, width, offset):
     return header_matrix
 
 def finalAddHeader(shares, width):
+    global zeroCount
+    zeroCount = [0 for i in range(len(shares))]
     offset = 0
     count = 0
     limit = math.ceil(float(19) / k)
@@ -240,6 +244,13 @@ def headerPiecesToDecimal(pieces):
     return int(joined, 2)
 
 
+def getNonZero(shares):
+    ans = [[] for i in range(len(shares))]
+    for idx, share in enumerate(shares):
+        for num in share:
+            if num != 0:
+                ans[idx].append(num)
+    return ans
 '''
 Arguments:
     None
@@ -284,6 +295,7 @@ Description:
 def reconstructHeader(shareNumbers, k):
     shares = []
     temp = []
+    prods = []
     for num in shareNumbers:
         r, g, b, h, w = getImageMatrix(num+".png")
         d = {
@@ -338,7 +350,8 @@ def reconstructHeader(shareNumbers, k):
         lhs = np.matrix(lhs)
         inv = np.linalg.inv(lhs)
         prod = inv * r
-        print lhs
+        prods.append(prod)
+    return prods
 
 '''
 Arguments:
@@ -360,8 +373,10 @@ if __name__ == "__main__":
         k = int(raw_input("Enter the value of k: "))
         shareNumbers = raw_input("Enter k share numbers:\n").split(' ')[:k]
         header = reconstructHeader(shareNumbers, k)
-        print header
-        # n = float(header[0])
-        # k = float(header[1])
-        # print n, k
-        # mask_pattern_len = mask_generator(n, k)
+        recoveredHeader = [int(round(r)) for m in header for r in list(m)][:19]
+        print recoveredHeader
+        recovered_n = header[0]
+        recovered_k = header[1]
+        recovered_key = ''.join([chr(num) for num in header[2:18]])
+        recovered_size = header[18]
+        mask_pattern_len = mask_generator(n, k)
