@@ -4,6 +4,7 @@ from PIL import Image
 import hashlib
 import numpy as np
 import sys
+import math
 
 
 mask = []
@@ -12,7 +13,7 @@ key = ""
 prev = 0
 n = 0
 k = 0
-
+headerStructure = []
 
 '''
 Arguments:
@@ -30,6 +31,11 @@ def getParams():
     key = m.digest()
     nInput = int(raw_input("Enter n:\n> "))
     kInput = int(raw_input("Enter k:\n> "))
+    headerStructure.append(nInput)
+    headerStructure.append(kInput)
+    l = list(key)
+    for ch in l:
+        headerStructure.append(ord(ch))
     return key, nInput, kInput
 
 
@@ -132,7 +138,6 @@ def saveImage(red, green, blue):
             for k in range(w):
                 t = (red[i][j][k], green[i][j][k], blue[i][j][k])
                 images[i].append(t)
-    print images[0]
     for i in range(n):
         im = Image.new('RGB', (w, h))
         im.putdata(images[i])
@@ -147,26 +152,27 @@ Description:
     Multiplies shares with header matrix to generate "transmission-ready"
     shares with header info attached.
 '''
-def addHeader(shares, width):
+def addHeader(shares, width, offset):
     global key
     temp = []
     header_matrix = np.zeros(shape=(n, k))
-    final_header = [[0 for j in range(k+1)] for i in range(n)]
     for i in range(len(shares)):
         count = 1
-        for m in shares[i]:
-            if(m != 0):
+        # Temporary
+        idx = offset + 1
+        while count <= k:
+            m = shares[i][idx]
+            if (m != 0):
                 temp.append(m)
-                count = count + 1
-            if (count > k):
-                header_matrix[i] = temp
-                temp = []
-                break
+                count += 1
+            idx += 1
+        header_matrix[i] = temp
+        temp = []
+
     h = np.zeros(shape=(k, 1))
-    h[0] = n
-    h[1] = k
-    for t in range(2, k):
-        h[t] = ord(key[t-2])
+    for t in range(k):
+        h[t] = headerStructure[(offset+t) % 19] # 19 hardcoded since size of header structure is always this
+    print header_matrix
     header_middle = np.dot(header_matrix, h)
     for x in range(len(header_middle)):
         binary = "{0:b}".format(int(header_middle[x]))
@@ -180,20 +186,42 @@ def addHeader(shares, width):
             binary_split[i] = int(''.join(binary_split[i]), 2)
         binary_split = binary_split[::-1]
         header_matrix[x] = binary_split
+    return header_matrix
+
+def finalAddHeader(shares, width):
+    offset = 0
+    count = 0
+    limit = math.ceil(float(19) / k)
+    allOut = []
+    final_header = [[0 for j in range(k+1)] for i in range(n)]
+    while count < limit:
+        hmatrix = addHeader(shares, width, offset)
+        allOut.append(hmatrix)
+        offset += k
+        count += 1
+    final = [[] for i in range(len(allOut))]
+    for a in allOut:
+        for i in range(len(a)):
+            for j in range(k):
+                final[i].append(a[i][j])
+
     for i in range(n):
-        final_header[i] = [i+1] + [int(num) for num in header_matrix[i]]
+        final_header[i] = [i+1] + [int(num) for num in final[i]]
     realShares = []
+    limit = int((math.ceil(float(19) / k) * k) + 1)
     for s in shares:
         realShares.append([s[i:i+width] + [0] for i in xrange(0, len(s), width)])
     lastPos = len(realShares[0][0]) - 1
     for idx, s in enumerate(realShares):
         for jdx, row in enumerate(s):
-            if jdx > k:
+            if jdx >= limit:
                 el = 0
             else:
                 el = final_header[idx][jdx]
             realShares[idx][jdx][lastPos] = el
     return realShares
+
+
 
 '''
 Arguments:
@@ -232,15 +260,16 @@ def encrypt(path):
         print m
     try:
         red, green, blue, h, w = getImageMatrix(path)
+        headerStructure.append(h*w)
     except:
         print "That's not an image!"
         sys.exit(1)
     redShares = encipher(red, h, w)
-    redShares = addHeader(redShares, w)
+    redShares = finalAddHeader(redShares, w)
     greenShares = encipher(green, h, w)
-    greenShares = addHeader(greenShares, w)
+    greenShares = finalAddHeader(greenShares, w)
     blueShares = encipher(blue, h, w)
-    blueShares = addHeader(blueShares, w)
+    blueShares = finalAddHeader(blueShares, w)
     return redShares, greenShares, blueShares
 
 
@@ -254,6 +283,7 @@ Description:
 '''
 def reconstructHeader(shareNumbers, k):
     shares = []
+    temp = []
     for num in shareNumbers:
         r, g, b, h, w = getImageMatrix(num+".png")
         d = {
@@ -264,42 +294,51 @@ def reconstructHeader(shareNumbers, k):
             'w': w
         }
         shares.append(d)
-        '''
-        Now, for each R (and G and B), take last column.
-        Obtain the first k values in this column.
-        Convert to bits, concat, convert to decimal. --> X
-        RHS = column (X's)
-        LHS = first k numbers of each row of image
-        solve for header
-        '''
+    redShares = [[] for i in range(len(shares))]
+    '''
+    Now, for each R (and G and B), take last column.
+    Obtain the first k values in this column.
+    Convert to bits, concat, convert to decimal. --> X
+    RHS = column (X's)
+    LHS = first k numbers of each row of image
+    solve for header
+    '''
     parts = [[] for i in range(k)]
+    limit = int((math.ceil(float(19)/k) * k) + 1)
     for idx, s in enumerate(shares):
-        a = s['r']
-        for count in range(k+1):
+        a = s['r'] # Only need one component of one image to construct RHS
+        for count in range(limit):
             parts[idx].append(a[(count+1)*w-1])
     # Putting them in order of shares...
     parts.sort(key=lambda x: int(x[0]))
     rhs = [[] for i in range(k)]
+    actualParts = [[] for i in range(k)]
+    final = [[] for i in range(k)]
     for idx, p in enumerate(parts):
-        print p
-        rhs[idx].append(headerPiecesToDecimal(p[1:]))
-    rhs = np.matrix(rhs)
-    print rhs
-    lhs = [[] for i in range(k)]
+        actualParts[idx] = p[1:]
+    for idx, p in enumerate(actualParts):
+        for i in range(0, len(p), k):
+            final[idx].append(p[i:i+k])
+    rhs = [[] for i in range(len(final[0]))]
+    for f in final:
+        for idx, l in enumerate(f):
+            rhs[idx].append(headerPiecesToDecimal(l))
+
     for idx, s in enumerate(shares):
-        a = s['r']
-        count = 0
-        i = 0
-        while count < k:
-            if a[i] != 0:
-                lhs[idx].append(a[i])
-                count += 1
-            i += 1
-    lhs = np.matrix(lhs)
-    print lhs
-    inv = np.linalg.inv(lhs)
-    prod = inv * rhs
-    return prod
+        for element in s['r']:
+            if element != 0:
+                redShares[idx].append(element)
+
+    for pos, r in enumerate(rhs):
+        r = [[num] for num in r]
+        r = np.matrix(r)
+
+        lhs = [redShares[i][pos*k:(pos+1)*k] for i in range(k)]
+
+        lhs = np.matrix(lhs)
+        inv = np.linalg.inv(lhs)
+        prod = inv * r
+        print lhs
 
 '''
 Arguments:
