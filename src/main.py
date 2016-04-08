@@ -5,6 +5,7 @@ import hashlib
 import numpy as np
 import sys
 import math
+import gmpy
 
 
 mask = []
@@ -15,6 +16,7 @@ n = 0
 k = 0
 headerStructure = []
 zeroCount = []
+size = [0, 0]
 
 '''
 Arguments:
@@ -59,7 +61,8 @@ def mask_generator(n, k):
     k = 0
     while len(sortedPerms):
         mask.append(sortedPerms.pop(len(sortedPerms)-1))
-        mask.append(sortedPerms.pop(0))
+        if len(sortedPerms):
+            mask.append(sortedPerms.pop(0))
     mask = [list(p) for p in mask]
     mask_pattern_len = len(mask)
     mask = [[line[i] for line in mask] for i in range(n)]
@@ -79,26 +82,81 @@ Description:
         * P = original chosen byte [(Pi-1) = 0]
         * K = key
 '''
+# def encipher(plain, height, width):
+#     global n, key, mask, mask_pattern_len, prev
+#     PS = 0
+#     shares = [[] for i in range(n)]
+#     L = height * width
+#     Index = [0 for j in range(L)]
+#     for j in range(L):
+#         PS += (ord(key[j % 16]) * ord(key[(j+1) % 16]))
+#         PS %= L
+#         while Index[PS] != 0:
+#             PS = (PS+1) % L
+#         secretByte = plain[PS]
+#         Index[PS] = 1
+#         for i in range(n):
+#             if (mask[i][j % mask_pattern_len] == '1'):
+#                 R = (prev ^ (secretByte * ord(key[j % 16]))) % 251
+#                 shares[i].append(R)
+#                 prev = secretByte
+#     return shares
+
+
 def encipher(plain, height, width):
     global n, key, mask, mask_pattern_len, prev
-    PS = 0
     shares = [[] for i in range(n)]
     L = height * width
-    Index = [0 for j in range(L)]
     for j in range(L):
-        PS += (ord(key[j % 16]) * ord(key[(j+1) % 16]))
-        PS %= L
-        while Index[PS] != 0:
-            PS = (PS+1) % L
-        secretByte = plain[PS]
-        Index[PS] = 1
         for i in range(n):
             if (mask[i][j % mask_pattern_len] == '1'):
+                secretByte = plain[j]
                 R = (prev ^ (secretByte * ord(key[j % 16]))) % 251
                 shares[i].append(R)
                 prev = secretByte
+    for s in shares:
+        toAdd = width - (len(s) % width)
+        if toAdd != width:
+            for i in range(toAdd):
+                s.append(32)
     return shares
 
+
+# def expandMatrix(shares, key, size, MOD):
+#     global prev, mask, mask_pattern_len
+#     mat = [[0 for i in range(size)] for k in range(len(shares))]
+#     for i, s in enumerate(shares):
+#         for j, el in enumerate(s):
+#             if (mask[i][j % mask_pattern_len] == '1'):
+#                 P = ((prev ^ el) * int(gmpy.invert(ord(key[j % 16]), MOD))) % 251
+#                 mat[i][j] = P
+#                 prev = el
+#             # else:
+#             #     P = ((prev ^ 0) * int(gmpy.invert(ord(key[j % 16]), MOD))) % 251
+#             #     mat[i][j] = P
+#             #     prev = 0
+#     return mat
+
+def expandMatrix(shares, key, size):
+    global prev, mask, mask_pattern_len
+    mat = [[0 for i in range(size)] for k in range(len(shares))]
+    temp = [[] for i in range(len(shares))]
+    count = [-1 for i in range(len(shares))]
+    for j in range(size):
+        for i, s in enumerate(shares):
+            if (mask[i][j % mask_pattern_len] == '1'):
+                count[i] += 1
+                temp[i].append(s[count[i]])
+            if (mask[i][j % mask_pattern_len] == '0'):
+                temp[i].append(0)
+
+
+    for j in range(len(temp[0])):
+        for i, s in enumerate(temp):
+                P = ((prev ^ s[j]) * gmpy.invert(ord(key[j % 16]), 251)) % 251
+                mat[i][j] = int(P)
+                prev = P
+    return mat
 
 '''
 Arguments:
@@ -110,12 +168,15 @@ Description:
     Utilizes Python's PIL library to convert given image to pixel matrices.
 '''
 def getImageMatrix(path):
+    global size
     im = Image.open(path)
     pix = im.load()
     red = []
     green = []
     blue = []
     width, height = im.size
+    size[0] = height
+    size[1] = width
     for y in range(height):
         for x in range(width):
             try:
@@ -143,6 +204,20 @@ def saveImage(red, green, blue):
         im = Image.new('RGB', (w, h))
         im.putdata(images[i])
         im.save("./"+str(i)+".png")
+
+
+def saveImage1D(red, green, blue, height, width):
+    # print red
+    # print green
+    # print blue
+    # print width, height
+    image = []
+    for i in range(len(red)):
+        t = (red[i], green[i], blue[i])
+        image.append(t)
+    im = Image.new('RGB', (width, height))
+    im.putdata(image)
+    im.save("./reconstructed.png")
 
 '''
 Arguments:
@@ -174,7 +249,6 @@ def addHeader(shares, width, offset):
     h = np.zeros(shape=(k, 1))
     for t in range(k):
         h[t] = headerStructure[(offset+t) % 19] # 19 hardcoded since size of header structure is always this
-    print header_matrix
     header_middle = np.dot(header_matrix, h)
     for x in range(len(header_middle)):
         binary = "{0:b}".format(int(header_middle[x]))
@@ -203,7 +277,7 @@ def finalAddHeader(shares, width):
         allOut.append(hmatrix)
         offset += k
         count += 1
-    final = [[] for i in range(len(allOut))]
+    final = [[] for i in range(len(allOut[0]))]
     for a in allOut:
         for i in range(len(a)):
             for j in range(k):
@@ -214,7 +288,7 @@ def finalAddHeader(shares, width):
     realShares = []
     limit = int((math.ceil(float(19) / k) * k) + 1)
     for s in shares:
-        realShares.append([s[i:i+width] + [0] for i in xrange(0, len(s), width)])
+        realShares.append([s[i:i+width] + [0] for i in range(0, len(s), width)])
     lastPos = len(realShares[0][0]) - 1
     for idx, s in enumerate(realShares):
         for jdx, row in enumerate(s):
@@ -244,13 +318,36 @@ def headerPiecesToDecimal(pieces):
     return int(joined, 2)
 
 
-def getNonZero(shares):
-    ans = [[] for i in range(len(shares))]
-    for idx, share in enumerate(shares):
-        for num in share:
-            if num != 0:
-                ans[idx].append(num)
-    return ans
+# def final_combination(sh,key,width,height):
+#     PS = 0
+#     L = height * width
+#     Index = [0 for j in range(L)]
+
+#     for s in sh[1:]:
+#         for idx,i in enumerate(s):
+#                 sh[0][idx] = sh[0][idx] | i
+
+#     for i in range(L):                       
+#         PS += (ord(key[i % 16]) * ord(key[(i+1) % 16]))
+#         PS %= L
+#         while Index[PS] != 0:
+#             PS = (PS+1) % L
+#         sh[1][PS] = sh[0][i]    
+#         Index[PS] = 1
+#     return sh[1]
+
+
+def final_combination(sh,key,width,height):
+    PS = 0
+    L = height * width
+
+    for s in sh[1:]:
+        for idx,i in enumerate(s):
+                sh[0][idx] = sh[0][idx] | i
+
+    return sh[0]
+
+
 '''
 Arguments:
     None
@@ -263,14 +360,15 @@ Description:
 def encrypt(path):
     global key, n, k, mask_pattern_len
     key, n, k = getParams()
-    print "Key: " + bytes(key)
+    # print "Key: " + bytes(key)
     mask_pattern_len = mask_generator(n, k)
-    print "Mask pattern length: " + str(mask_pattern_len)
-    print "Masks:"
-    for m in mask:
-        print m
+    # print "Mask pattern length: " + str(mask_pattern_len)
+    # print "Masks:"
+    # for m in mask:
+    #     print m
     try:
         red, green, blue, h, w = getImageMatrix(path)
+        print red
         headerStructure.append(h*w)
     except:
         print "That's not an image!"
@@ -351,7 +449,7 @@ def reconstructHeader(shareNumbers, k):
         inv = np.linalg.inv(lhs)
         prod = inv * r
         prods.append(prod)
-    return prods
+    return prods, shares
 
 '''
 Arguments:
@@ -372,11 +470,55 @@ if __name__ == "__main__":
     elif sys.argv[1] == "-d":
         k = int(raw_input("Enter the value of k: "))
         shareNumbers = raw_input("Enter k share numbers:\n").split(' ')[:k]
-        header = reconstructHeader(shareNumbers, k)
+        header, shares = reconstructHeader(shareNumbers, k)
         recoveredHeader = [int(round(r)) for m in header for r in list(m)][:19]
-        print recoveredHeader
-        recovered_n = header[0]
-        recovered_k = header[1]
-        recovered_key = ''.join([chr(num) for num in header[2:18]])
-        recovered_size = header[18]
-        mask_pattern_len = mask_generator(n, k)
+        recovered_n = recoveredHeader[0]
+        recovered_k = recoveredHeader[1]
+        recovered_key = ''.join([chr(num) for num in recoveredHeader[2:18]])
+        recovered_size = recoveredHeader[18]
+        mask_pattern_len = mask_generator(recovered_n, recovered_k)
+
+        reds = [s['r'] for s in shares]
+        # Removing last column
+        reds_final = [[] for i in range(len(reds))]
+        width = size[1]
+        height = size[0]
+
+        noTouch = [(r * width) - 1 for r in range(1, height+1)]
+        for idx, r in enumerate(reds):
+            for pos, num in enumerate(r):
+                if pos not in noTouch:
+                    reds_final[idx].append(num)
+        
+        m = expandMatrix(reds_final, recovered_key, recovered_size)
+        ansRed = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
+
+        greens = [s['g'] for s in shares]
+        # Removing last column
+        greens_final = [[] for i in range(len(greens))]
+
+        noTouch = [(r * width) - 1 for r in range(1, height+1)]
+        for idx, r in enumerate(greens):
+            for pos, num in enumerate(r):
+                if pos not in noTouch:
+                    greens_final[idx].append(num)
+        
+        m = expandMatrix(greens_final, recovered_key, recovered_size)
+        ansGreen = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
+
+        blues = [s['b'] for s in shares]
+        # Removing last column
+        blues_final = [[] for i in range(len(blues))]
+
+        noTouch = [(r * width) - 1 for r in range(1, height+1)]
+        for idx, r in enumerate(blues):
+            for pos, num in enumerate(r):
+                if pos not in noTouch:
+                    blues_final[idx].append(num)
+        
+        m = expandMatrix(blues_final, recovered_key, recovered_size)
+        ansBlue = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
+
+        width -= 1
+        height = recovered_size / width
+        saveImage1D(ansRed, ansGreen, ansBlue, height, width)
