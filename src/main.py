@@ -17,6 +17,7 @@ k = 0
 headerStructure = []
 zeroCount = []
 size = [0, 0]
+counter = 0
 
 '''
 Arguments:
@@ -111,9 +112,9 @@ def encipher(plain, height, width):
         for i in range(n):
             if (mask[i][j % mask_pattern_len] == '1'):
                 secretByte = plain[j]
-                R = (prev ^ (secretByte * ord(key[j % 16]))) % 251
+                R = prev ^ (secretByte * ord(key[j % 16])) % 251
                 shares[i].append(R)
-                prev = secretByte
+        prev = secretByte
     for s in shares:
         toAdd = width - (len(s) % width)
         if toAdd != width:
@@ -122,40 +123,26 @@ def encipher(plain, height, width):
     return shares
 
 
-# def expandMatrix(shares, key, size, MOD):
-#     global prev, mask, mask_pattern_len
-#     mat = [[0 for i in range(size)] for k in range(len(shares))]
-#     for i, s in enumerate(shares):
-#         for j, el in enumerate(s):
-#             if (mask[i][j % mask_pattern_len] == '1'):
-#                 P = ((prev ^ el) * int(gmpy.invert(ord(key[j % 16]), MOD))) % 251
-#                 mat[i][j] = P
-#                 prev = el
-#             # else:
-#             #     P = ((prev ^ 0) * int(gmpy.invert(ord(key[j % 16]), MOD))) % 251
-#             #     mat[i][j] = P
-#             #     prev = 0
-#     return mat
+def decipher(cipheredByte, j, prev, key):
+    # print prev, cipheredByte, counter, ord(key[counter % 16]),
+    P = (prev ^ cipheredByte) * gmpy.invert(ord(key[j % 16]), 251) % 251
+    # print P
+    return P
+
 
 def expandMatrix(shares, key, size):
     global prev, mask, mask_pattern_len
-    mat = [[0 for i in range(size)] for k in range(len(shares))]
-    temp = [[] for i in range(len(shares))]
+    mat = [[] for k in range(len(shares))]
     count = [-1 for i in range(len(shares))]
     for j in range(size):
         for i, s in enumerate(shares):
             if (mask[i][j % mask_pattern_len] == '1'):
                 count[i] += 1
-                temp[i].append(s[count[i]])
+                P = int(decipher(s[count[i]], j, prev, key))
+                mat[i].append(P)
             if (mask[i][j % mask_pattern_len] == '0'):
-                temp[i].append(0)
-
-
-    for j in range(len(temp[0])):
-        for i, s in enumerate(temp):
-                P = ((prev ^ s[j]) * gmpy.invert(ord(key[j % 16]), 251)) % 251
-                mat[i][j] = int(P)
-                prev = P
+                mat[i].append(0)
+        prev = P
     return mat
 
 '''
@@ -207,10 +194,6 @@ def saveImage(red, green, blue):
 
 
 def saveImage1D(red, green, blue, height, width):
-    # print red
-    # print green
-    # print blue
-    # print width, height
     image = []
     for i in range(len(red)):
         t = (red[i], green[i], blue[i])
@@ -338,9 +321,6 @@ def headerPiecesToDecimal(pieces):
 
 
 def final_combination(sh,key,width,height):
-    PS = 0
-    L = height * width
-
     for s in sh[1:]:
         for idx,i in enumerate(s):
                 sh[0][idx] = sh[0][idx] | i
@@ -368,12 +348,13 @@ def encrypt(path):
     #     print m
     try:
         red, green, blue, h, w = getImageMatrix(path)
-        print red
+        # print "red = ", red
         headerStructure.append(h*w)
     except:
         print "That's not an image!"
         sys.exit(1)
     redShares = encipher(red, h, w)
+    # print "redShares = ", redShares
     redShares = finalAddHeader(redShares, w)
     greenShares = encipher(green, h, w)
     greenShares = finalAddHeader(greenShares, w)
@@ -445,10 +426,17 @@ def reconstructHeader(shareNumbers, k):
 
         lhs = [redShares[i][pos*k:(pos+1)*k] for i in range(k)]
 
+
         lhs = np.matrix(lhs)
-        inv = np.linalg.inv(lhs)
-        prod = inv * r
-        prods.append(prod)
+        # # print "LHS"
+        # print lhs
+        # print "RHS"
+        # print r
+        H = np.linalg.solve(lhs, r)
+        # print H
+        # inv = np.linalg.inv(lhs)
+        # prod = inv * r
+        prods.append(H)
     return prods, shares
 
 '''
@@ -489,9 +477,13 @@ if __name__ == "__main__":
             for pos, num in enumerate(r):
                 if pos not in noTouch:
                     reds_final[idx].append(num)
-        
+
+        # print "redsFinal =", reds_final
         m = expandMatrix(reds_final, recovered_key, recovered_size)
+        # print "m =", m
         ansRed = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
+
+        # print "ansRed = ", ansRed
 
         greens = [s['g'] for s in shares]
         # Removing last column
