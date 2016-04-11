@@ -107,17 +107,17 @@ def decipher(cipheredByte, j, prev, key):
     return P
 
 
-def expandMatrix(shares, key, size):
+def expandMatrix(shares, key, size, shareNumbers):
     global prev, mask, mask_pattern_len
     mat = [[] for k in range(len(shares))]
     count = [-1 for i in range(len(shares))]
     for j in range(size):
         for i, s in enumerate(shares):
-            if (mask[i][j % mask_pattern_len] == '1'):
+            if (mask[shareNumbers[i]][j % mask_pattern_len] == '1'):
                 count[i] += 1
                 P = int(decipher(s[count[i]], j, prev, key))
                 mat[i].append(P)
-            if (mask[i][j % mask_pattern_len] == '0'):
+            if (mask[shareNumbers[i]][j % mask_pattern_len] == '0'):
                 mat[i].append(0)
         prev = P
     return mat
@@ -285,7 +285,6 @@ def final_combination(sh,key,width,height):
     for s in sh[1:]:
         for idx,i in enumerate(s):
                 sh[0][idx] = sh[0][idx] | i
-
     return sh[0]
 
 
@@ -341,12 +340,13 @@ Return values:
 Description:
 	Uses linear algebra ( AX = B => X = (A^-1)*B ) to recover header from k shares.
 '''
-def reconstructHeader(shareNumbers, k):
+def reconstructHeader(fileNames, k):
     shares = []
     temp = []
     prods = []
-    for num in shareNumbers:
-        r, g, b, h, w = getImageMatrix(num+".png")
+    shareNumbers = []
+    for name in fileNames:
+        r, g, b, h, w = getImageMatrix(name+".png")
         d = {
             'r': r,
             'g': g,
@@ -376,6 +376,7 @@ def reconstructHeader(shareNumbers, k):
     actualParts = [[] for i in range(k)]
     final = [[] for i in range(k)]
     for idx, p in enumerate(parts):
+        shareNumbers.append(p[0]-1)
         actualParts[idx] = p[1:]
     for idx, p in enumerate(actualParts):
         for i in range(0, len(p), k):
@@ -398,7 +399,7 @@ def reconstructHeader(shareNumbers, k):
         lhs = np.matrix(lhs)
         H = np.linalg.solve(lhs, r)
         prods.append(H)
-    return prods, shares
+    return prods, shares, shareNumbers
 
 '''
 Arguments:
@@ -418,8 +419,8 @@ if __name__ == "__main__":
         saveImage(redShares, greenShares, blueShares)
     elif sys.argv[1] == "-d":
         k = int(raw_input("Enter the value of k: "))
-        shareNumbers = raw_input("Enter k share numbers:\n").split(' ')[:k]
-        header, shares = reconstructHeader(shareNumbers, k)
+        fileNames = raw_input("Enter k share names:\n").split(' ')[:k]
+        header, shares, shareNumbers = reconstructHeader(fileNames, k)
         recoveredHeader = [int(round(r)) for m in header for r in list(m)][:19]
         recovered_n = recoveredHeader[0]
         recovered_k = recoveredHeader[1]
@@ -439,7 +440,7 @@ if __name__ == "__main__":
                 if pos not in noTouch:
                     reds_final[idx].append(num)
 
-        m = expandMatrix(reds_final, recovered_key, recovered_size)
+        m = expandMatrix(reds_final, recovered_key, recovered_size, shareNumbers)
         ansRed = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
 
         prev = 0
@@ -452,7 +453,7 @@ if __name__ == "__main__":
                 if pos not in noTouch:
                     greens_final[idx].append(num)
         
-        m = expandMatrix(greens_final, recovered_key, recovered_size)
+        m = expandMatrix(greens_final, recovered_key, recovered_size, shareNumbers)
         ansGreen = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
 
         prev = 0
@@ -466,7 +467,7 @@ if __name__ == "__main__":
                 if pos not in noTouch:
                     blues_final[idx].append(num)
         
-        m = expandMatrix(blues_final, recovered_key, recovered_size)
+        m = expandMatrix(blues_final, recovered_key, recovered_size, shareNumbers)
         ansBlue = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
 
         width -= 1
