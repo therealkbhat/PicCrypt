@@ -83,27 +83,6 @@ Description:
         * P = original chosen byte [(Pi-1) = 0]
         * K = key
 '''
-# def encipher(plain, height, width):
-#     global n, key, mask, mask_pattern_len, prev
-#     PS = 0
-#     shares = [[] for i in range(n)]
-#     L = height * width
-#     Index = [0 for j in range(L)]
-#     for j in range(L):
-#         PS += (ord(key[j % 16]) * ord(key[(j+1) % 16]))
-#         PS %= L
-#         while Index[PS] != 0:
-#             PS = (PS+1) % L
-#         secretByte = plain[PS]
-#         Index[PS] = 1
-#         for i in range(n):
-#             if (mask[i][j % mask_pattern_len] == '1'):
-#                 R = (prev ^ (secretByte * ord(key[j % 16]))) % 251
-#                 shares[i].append(R)
-#                 prev = secretByte
-#     return shares
-
-
 def encipher(plain, height, width):
     global n, key, mask, mask_pattern_len, prev
     shares = [[] for i in range(n)]
@@ -124,9 +103,7 @@ def encipher(plain, height, width):
 
 
 def decipher(cipheredByte, j, prev, key):
-    # print prev, cipheredByte, counter, ord(key[counter % 16]),
-    P = (prev ^ cipheredByte) * gmpy.invert(ord(key[j % 16]), 251) % 251
-    # print P
+    P = ((prev ^ cipheredByte) * gmpy.invert(ord(key[j % 16]), 251)) % 251
     return P
 
 
@@ -197,7 +174,10 @@ def saveImage1D(red, green, blue, height, width):
     image = []
     for i in range(len(red)):
         t = (red[i], green[i], blue[i])
-        image.append(t)
+        if t[2] == 234:
+            image.append((251, 255, 234))
+        else:
+            image.append(t)
     im = Image.new('RGB', (width, height))
     im.putdata(image)
     im.save("./reconstructed.png")
@@ -301,25 +281,6 @@ def headerPiecesToDecimal(pieces):
     return int(joined, 2)
 
 
-# def final_combination(sh,key,width,height):
-#     PS = 0
-#     L = height * width
-#     Index = [0 for j in range(L)]
-
-#     for s in sh[1:]:
-#         for idx,i in enumerate(s):
-#                 sh[0][idx] = sh[0][idx] | i
-
-#     for i in range(L):                       
-#         PS += (ord(key[i % 16]) * ord(key[(i+1) % 16]))
-#         PS %= L
-#         while Index[PS] != 0:
-#             PS = (PS+1) % L
-#         sh[1][PS] = sh[0][i]    
-#         Index[PS] = 1
-#     return sh[1]
-
-
 def final_combination(sh,key,width,height):
     for s in sh[1:]:
         for idx,i in enumerate(s):
@@ -340,25 +301,34 @@ Description:
 def encrypt(path):
     global key, n, k, mask_pattern_len
     key, n, k = getParams()
-    # print "Key: " + bytes(key)
     mask_pattern_len = mask_generator(n, k)
-    # print "Mask pattern length: " + str(mask_pattern_len)
-    # print "Masks:"
-    # for m in mask:
-    #     print m
     try:
         red, green, blue, h, w = getImageMatrix(path)
-        # print "red = ", red
+        red_mod = []
+        green_mod = []
+        blue_mod = []
+        for i in range(len(red)):
+            if red[i] >= 251:
+                red_mod.append(250)
+            else:
+                red_mod.append(red[i])
+            if green[i] >= 251:
+                green_mod.append(250)
+            else:
+                green_mod.append(green[i])
+            if blue[i] >= 251:
+                blue_mod.append(250)
+            else:
+                blue_mod.append(blue[i])
         headerStructure.append(h*w)
     except:
         print "That's not an image!"
         sys.exit(1)
-    redShares = encipher(red, h, w)
-    # print "redShares = ", redShares
+    redShares = encipher(red_mod, h, w)
     redShares = finalAddHeader(redShares, w)
-    greenShares = encipher(green, h, w)
+    greenShares = encipher(green_mod, h, w)
     greenShares = finalAddHeader(greenShares, w)
-    blueShares = encipher(blue, h, w)
+    blueShares = encipher(blue_mod, h, w)
     blueShares = finalAddHeader(blueShares, w)
     return redShares, greenShares, blueShares
 
@@ -425,17 +395,8 @@ def reconstructHeader(shareNumbers, k):
         r = np.matrix(r)
 
         lhs = [redShares[i][pos*k:(pos+1)*k] for i in range(k)]
-
-
         lhs = np.matrix(lhs)
-        # # print "LHS"
-        # print lhs
-        # print "RHS"
-        # print r
         H = np.linalg.solve(lhs, r)
-        # print H
-        # inv = np.linalg.inv(lhs)
-        # prod = inv * r
         prods.append(H)
     return prods, shares
 
@@ -478,15 +439,11 @@ if __name__ == "__main__":
                 if pos not in noTouch:
                     reds_final[idx].append(num)
 
-        # print "redsFinal =", reds_final
         m = expandMatrix(reds_final, recovered_key, recovered_size)
-        # print "m =", m
         ansRed = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
 
-        # print "ansRed = ", ansRed
-
+        prev = 0
         greens = [s['g'] for s in shares]
-        # Removing last column
         greens_final = [[] for i in range(len(greens))]
 
         noTouch = [(r * width) - 1 for r in range(1, height+1)]
@@ -498,6 +455,7 @@ if __name__ == "__main__":
         m = expandMatrix(greens_final, recovered_key, recovered_size)
         ansGreen = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
 
+        prev = 0
         blues = [s['b'] for s in shares]
         # Removing last column
         blues_final = [[] for i in range(len(blues))]
