@@ -45,6 +45,83 @@ def getParams():
 
 '''
 Arguments:
+    Path to image file to be shared.
+Return values:
+    Height, width, and 1D arrays corresponding to the R,G,B pixel values of
+    each pixel in image.
+Description:
+    Utilizes Python's PIL library to convert given image to pixel matrices.
+'''
+def getImageMatrix(path):
+    global size
+    im = Image.open(path)
+    pix = im.load()
+    red = []
+    green = []
+    blue = []
+    width, height = im.size
+    size[0] = height
+    size[1] = width
+    for y in range(height):
+        for x in range(width):
+            try:
+                R, G, B, A = pix[x, y]
+            except:
+                R, G, B = pix[x, y]
+            red.append(R)
+            green.append(G)
+            blue.append(B)
+    return red, green, blue, height, width
+
+
+'''
+Arguments:
+    R,G,B components of image as 2D lists, height, width
+Return values:
+    None
+Description:
+    Uses PIL to save image as file.
+'''
+def saveImage(red, green, blue):
+    n = len(red)
+    h = len(red[0])
+    w = len(red[0][0])
+    images = [[[0 for j in range(w)] for k in range(h)] for i in range(n)]
+    images = [[] for i in range(n)]
+    for i in range(n):
+        for j in range(h):
+            for k in range(w):
+                t = (red[i][j][k], green[i][j][k], blue[i][j][k])
+                images[i].append(t)
+    for i in range(n):
+        im = Image.new('RGB', (w, h))
+        im.putdata(images[i])
+        im.save("./"+str(i)+".png")
+
+
+'''
+Arguments:
+    R,G,B components of image as 1D lists, height, width
+Return values:
+    None
+Description:
+    Uses PIL to save image as file.
+'''
+def saveImage1D(red, green, blue, height, width):
+    image = []
+    for i in range(len(red)):
+        t = (red[i], green[i], blue[i])
+        if t[2] == 234:
+            image.append((251, 255, 234))
+        else:
+            image.append(t)
+    im = Image.new('RGB', (width, height))
+    im.putdata(image)
+    im.save("./reconstructed.png")
+
+
+'''
+Arguments:
     Total number of shares (n), threshold number (k)
 Return values:
     Length of bit mask.
@@ -102,85 +179,48 @@ def encipher(plain, height, width):
     return shares
 
 
-def decipher(cipheredByte, j, prev, key):
-    P = ((prev ^ cipheredByte) * gmpy.invert(ord(key[j % 16]), 251)) % 251
-    return P
-
-
-def expandMatrix(shares, key, size, shareNumbers):
-    global prev, mask, mask_pattern_len
-    mat = [[] for k in range(len(shares))]
-    count = [-1 for i in range(len(shares))]
-    for j in range(size):
-        for i, s in enumerate(shares):
-            if (mask[shareNumbers[i]][j % mask_pattern_len] == '1'):
-                count[i] += 1
-                P = int(decipher(s[count[i]], j, prev, key))
-                mat[i].append(P)
-            if (mask[shareNumbers[i]][j % mask_pattern_len] == '0'):
-                mat[i].append(0)
-        prev = P
-    return mat
-
 '''
 Arguments:
-    Path to image file to be shared.
+    None
 Return values:
-    Height, width, and 1D arrays corresponding to the R,G,B pixel values of
-    each pixel in image.
+    None
 Description:
-    Utilizes Python's PIL library to convert given image to pixel matrices.
+    Serves as a driver function that calls the various components of the
+    implementation.
 '''
-def getImageMatrix(path):
-    global size
-    im = Image.open(path)
-    pix = im.load()
-    red = []
-    green = []
-    blue = []
-    width, height = im.size
-    size[0] = height
-    size[1] = width
-    for y in range(height):
-        for x in range(width):
-            try:
-                R, G, B, A = pix[x, y]
-            except:
-                R, G, B = pix[x, y]
-            red.append(R)
-            green.append(G)
-            blue.append(B)
-    return red, green, blue, height, width
-
-
-def saveImage(red, green, blue):
-    n = len(red)
-    h = len(red[0])
-    w = len(red[0][0])
-    images = [[[0 for j in range(w)] for k in range(h)] for i in range(n)]
-    images = [[] for i in range(n)]
-    for i in range(n):
-        for j in range(h):
-            for k in range(w):
-                t = (red[i][j][k], green[i][j][k], blue[i][j][k])
-                images[i].append(t)
-    for i in range(n):
-        im = Image.new('RGB', (w, h))
-        im.putdata(images[i])
-        im.save("./"+str(i)+".png")
-
-
-def saveImage1D(red, green, blue, height, width):
-    image = []
-    for i in range(len(red)):
-        t = (red[i], green[i], blue[i])
-        if t[2] == 234:
-            image.append((251, 255, 234))
-        else:
-            image.append(t)
-    im = Image.new('RGB', (width, height))
-    im.putdata(image)
-    im.save("./reconstructed.png")
+def encrypt(path):
+    global key, n, k, mask_pattern_len
+    key, n, k = getParams()
+    mask_pattern_len = mask_generator(n, k)
+    try:
+        red, green, blue, h, w = getImageMatrix(path)
+        red_mod = []
+        green_mod = []
+        blue_mod = []
+        for i in range(len(red)):
+            if red[i] >= 251:
+                red_mod.append(250)
+            else:
+                red_mod.append(red[i])
+            if green[i] >= 251:
+                green_mod.append(250)
+            else:
+                green_mod.append(green[i])
+            if blue[i] >= 251:
+                blue_mod.append(250)
+            else:
+                blue_mod.append(blue[i])
+        headerStructure.append(h*w)
+    except:
+        print "That's not an image!"
+        sys.exit(1)
+    redShares = encipher(red_mod, h, w)
+    redShares = finalAddHeader(redShares, w)
+    greenShares = encipher(green_mod, h, w)
+    greenShares = finalAddHeader(greenShares, w)
+    blueShares = encipher(blue_mod, h, w)
+    blueShares = finalAddHeader(blueShares, w)
+    return redShares, greenShares, blueShares
 
 '''
 Arguments:
@@ -227,6 +267,15 @@ def addHeader(shares, width, offset):
         header_matrix[x] = binary_split
     return header_matrix
 
+
+'''
+Arguments:
+    Shares, width of original.
+Return value:
+    Shares with header column attached.
+Description:
+    Calls addHeader repeatedly, constructs and adds the header column to each share.
+'''
 def finalAddHeader(shares, width):
     global zeroCount
     zeroCount = [0 for i in range(len(shares))]
@@ -263,6 +312,42 @@ def finalAddHeader(shares, width):
     return realShares
 
 
+'''
+Arguments:
+    Byte to be deciphered, various components of decryption.
+Return value:
+    Plaintext byte obtained from cipheredByte.
+Description:
+    Decrypts the given byte according to equation in paper.
+'''
+def decipher(cipheredByte, j, prev, key):
+    P = ((prev ^ cipheredByte) * gmpy.invert(ord(key[j % 16]), 251)) % 251
+    return P
+
+
+'''
+Arguments:
+    Shares, key, size of original and the share numbers.
+Return value:
+    Shares expanded with zeroes as per the corresponding masks.
+Description:
+    Fills the shares with zeroes in the right places as per corresponding mask.
+'''
+def expandMatrix(shares, key, size, shareNumbers):
+    global prev, mask, mask_pattern_len
+    mat = [[] for k in range(len(shares))]
+    count = [-1 for i in range(len(shares))]
+    for j in range(size):
+        for i, s in enumerate(shares):
+            if (mask[shareNumbers[i]][j % mask_pattern_len] == '1'):
+                count[i] += 1
+                P = int(decipher(s[count[i]], j, prev, key))
+                mat[i].append(P)
+            if (mask[shareNumbers[i]][j % mask_pattern_len] == '0'):
+                mat[i].append(0)
+        prev = P
+    return mat
+
 
 '''
 Arguments:
@@ -281,55 +366,20 @@ def headerPiecesToDecimal(pieces):
     return int(joined, 2)
 
 
+'''
+Arguments:
+    k expanded and decrypted shares, key, width and height
+Return values:
+    Matrix corresponding to result of decryption phase.
+Description:
+    All shares are ORed together, and this result is returned.
+
+'''
 def final_combination(sh,key,width,height):
     for s in sh[1:]:
         for idx,i in enumerate(s):
                 sh[0][idx] = sh[0][idx] | i
     return sh[0]
-
-
-'''
-Arguments:
-    None
-Return values:
-    None
-Description:
-    Serves as a driver function that calls the various components of the
-    implementation.
-'''
-def encrypt(path):
-    global key, n, k, mask_pattern_len
-    key, n, k = getParams()
-    mask_pattern_len = mask_generator(n, k)
-    try:
-        red, green, blue, h, w = getImageMatrix(path)
-        red_mod = []
-        green_mod = []
-        blue_mod = []
-        for i in range(len(red)):
-            if red[i] >= 251:
-                red_mod.append(250)
-            else:
-                red_mod.append(red[i])
-            if green[i] >= 251:
-                green_mod.append(250)
-            else:
-                green_mod.append(green[i])
-            if blue[i] >= 251:
-                blue_mod.append(250)
-            else:
-                blue_mod.append(blue[i])
-        headerStructure.append(h*w)
-    except:
-        print "That's not an image!"
-        sys.exit(1)
-    redShares = encipher(red_mod, h, w)
-    redShares = finalAddHeader(redShares, w)
-    greenShares = encipher(green_mod, h, w)
-    greenShares = finalAddHeader(greenShares, w)
-    blueShares = encipher(blue_mod, h, w)
-    blueShares = finalAddHeader(blueShares, w)
-    return redShares, greenShares, blueShares
 
 
 '''
@@ -400,6 +450,7 @@ def reconstructHeader(fileNames, k):
         H = np.linalg.solve(lhs, r)
         prods.append(H)
     return prods, shares, shareNumbers
+
 
 '''
 Arguments:
