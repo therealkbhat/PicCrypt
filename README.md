@@ -13,6 +13,6 @@ This is/was our implementation for a sixth-semester minor project. Includes:
 * Improve user interface!
 
 ##References
-We implemented the algorithm(s) detailed [here](https://www.researchgate.net/profile/Prabir_Naskar2/publication/280611285_A_Key_Based_Secure_Threshold_Cryptography_for_Secret_Image/links/55beed0908ae092e96651821.pdf).
+We ([Sagar](https://github.com/gitsagar) and I) implemented the algorithm(s) detailed [here](https://www.researchgate.net/profile/Prabir_Naskar2/publication/280611285_A_Key_Based_Secure_Threshold_Cryptography_for_Secret_Image/links/55beed0908ae092e96651821.pdf).
 
 **Disclaimer**: there are errors in that paper!
