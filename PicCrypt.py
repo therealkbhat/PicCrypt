@@ -28,6 +28,8 @@ Description:
     Obtains encryption key, n and k parameters from user.
     Generates MD5(key) and stores this value for further use.
 '''
+
+
 def getParams():
     keyInput = raw_input("Enter key:\n> ")
     m = hashlib.md5()
@@ -52,6 +54,8 @@ Return values:
 Description:
     Utilizes Python's PIL library to convert given image to pixel matrices.
 '''
+
+
 def getImageMatrix(path):
     global size
     im = Image.open(path)
@@ -82,6 +86,8 @@ Return values:
 Description:
     Uses PIL to save image as file.
 '''
+
+
 def saveImage(red, green, blue):
     n = len(red)
     h = len(red[0])
@@ -96,7 +102,7 @@ def saveImage(red, green, blue):
     for i in range(n):
         im = Image.new('RGB', (w, h))
         im.putdata(images[i])
-        im.save("./"+str(i)+".png")
+        im.save("./" + str(i) + ".png")
 
 
 '''
@@ -107,6 +113,8 @@ Return values:
 Description:
     Uses PIL to save image as file.
 '''
+
+
 def saveImage1D(red, green, blue, height, width):
     image = []
     for i in range(len(red)):
@@ -131,14 +139,16 @@ Description:
     * n-k+1 ones
     These serve as the masks for n shares
 '''
+
+
 def mask_generator(n, k):
     global mask
-    toPermute = "0"*(k-1) + "1"*(n-k+1)
+    toPermute = "0" * (k - 1) + "1" * (n - k + 1)
     perms = set([''.join(p) for p in permutations(toPermute)])
     sortedPerms = sorted(perms)
     k = 0
     while len(sortedPerms):
-        mask.append(sortedPerms.pop(len(sortedPerms)-1))
+        mask.append(sortedPerms.pop(len(sortedPerms) - 1))
         if len(sortedPerms):
             mask.append(sortedPerms.pop(0))
     mask = [list(p) for p in mask]
@@ -160,6 +170,8 @@ Description:
         * P = original chosen byte [(Pi-1) = 0]
         * K = key
 '''
+
+
 def encipher(plain, height, width):
     global n, key, mask, mask_pattern_len, prev
     shares = [[] for i in range(n)]
@@ -188,6 +200,8 @@ Description:
     Serves as a driver function that calls the various components of the
     implementation.
 '''
+
+
 def encrypt(path):
     global key, n, k, mask_pattern_len
     key, n, k = getParams()
@@ -210,7 +224,7 @@ def encrypt(path):
                 blue_mod.append(250)
             else:
                 blue_mod.append(blue[i])
-        headerStructure.append(h*w)
+        headerStructure.append(h * w)
     except:
         print "That's not an image!"
         sys.exit(1)
@@ -231,6 +245,8 @@ Description:
     Multiplies shares with header matrix to generate "transmission-ready"
     shares with header info attached.
 '''
+
+
 def addHeader(shares, width, offset):
     global key, zeroCount
     temp = []
@@ -251,15 +267,16 @@ def addHeader(shares, width, offset):
 
     h = np.zeros(shape=(k, 1))
     for t in range(k):
-        h[t] = headerStructure[(offset+t) % 19] # 19 hardcoded since size of header structure is always this
+        # 19 hardcoded since size of header structure is always this
+        h[t] = headerStructure[(offset + t) % 19]
     header_middle = np.dot(header_matrix, h)
     for x in range(len(header_middle)):
         binary = "{0:b}".format(int(header_middle[x]))
-        binary = "0"*(8*k - len(binary)) + binary
+        binary = "0" * (8 * k - len(binary)) + binary
         rev_binary = binary[::-1]
         binary_split = [[] for i in range(k)]
         for j in range(len(rev_binary)):
-            binary_split[j/8].append(rev_binary[j])
+            binary_split[j / 8].append(rev_binary[j])
         for i in range(k):
             binary_split[i] = binary_split[i][::-1]
             binary_split[i] = int(''.join(binary_split[i]), 2)
@@ -274,8 +291,11 @@ Arguments:
 Return value:
     Shares with header column attached.
 Description:
-    Calls addHeader repeatedly, constructs and adds the header column to each share.
+    Calls addHeader repeatedly, constructs
+    and adds the header column to each share.
 '''
+
+
 def finalAddHeader(shares, width):
     global zeroCount
     zeroCount = [0 for i in range(len(shares))]
@@ -283,7 +303,7 @@ def finalAddHeader(shares, width):
     count = 0
     limit = math.ceil(float(19) / k)
     allOut = []
-    final_header = [[0 for j in range(k+1)] for i in range(n)]
+    final_header = [[0 for j in range(k + 1)] for i in range(n)]
     while count < limit:
         hmatrix = addHeader(shares, width, offset)
         allOut.append(hmatrix)
@@ -296,11 +316,12 @@ def finalAddHeader(shares, width):
                 final[i].append(a[i][j])
 
     for i in range(n):
-        final_header[i] = [i+1] + [int(num) for num in final[i]]
+        final_header[i] = [i + 1] + [int(num) for num in final[i]]
     realShares = []
     limit = int((math.ceil(float(19) / k) * k) + 1)
     for s in shares:
-        realShares.append([s[i:i+width] + [0] for i in range(0, len(s), width)])
+        realShares.append([s[i:i + width] + [0]
+                           for i in range(0, len(s), width)])
     lastPos = len(realShares[0][0]) - 1
     for idx, s in enumerate(realShares):
         for jdx, row in enumerate(s):
@@ -320,6 +341,8 @@ Return value:
 Description:
     Decrypts the given byte according to equation in paper.
 '''
+
+
 def decipher(cipheredByte, j, prev, key):
     P = ((prev ^ cipheredByte) * gmpy.invert(ord(key[j % 16]), 251)) % 251
     return P
@@ -333,6 +356,8 @@ Return value:
 Description:
     Fills the shares with zeroes in the right places as per corresponding mask.
 '''
+
+
 def expandMatrix(shares, key, size, shareNumbers):
     global prev, mask, mask_pattern_len
     mat = [[] for k in range(len(shares))]
@@ -357,11 +382,13 @@ Return value:
 Description:
     Reverses the operation seen at the bottom of page 75.
 '''
+
+
 def headerPiecesToDecimal(pieces):
     joined = ''
     for p in pieces:
         s = bin(p)[2:]
-        s = "0" * (8-len(s)) + s
+        s = "0" * (8 - len(s)) + s
         joined += s
     return int(joined, 2)
 
@@ -375,10 +402,12 @@ Description:
     All shares are ORed together, and this result is returned.
 
 '''
-def final_combination(sh,key,width,height):
+
+
+def final_combination(sh, key, width, height):
     for s in sh[1:]:
-        for idx,i in enumerate(s):
-                sh[0][idx] = sh[0][idx] | i
+        for idx, i in enumerate(s):
+            sh[0][idx] = sh[0][idx] | i
     return sh[0]
 
 
@@ -388,15 +417,18 @@ Arguments:
 Return values:
     Reconstructed header
 Description:
-	Uses linear algebra ( AX = B => X = (A^-1)*B ) to recover header from k shares.
+    Uses linear algebra ( AX = B => X = (A^-1)*B )
+    to recover header from k shares.
 '''
+
+
 def reconstructHeader(fileNames, k):
     shares = []
     temp = []
     prods = []
     shareNumbers = []
     for name in fileNames:
-        r, g, b, h, w = getImageMatrix(name+".png")
+        r, g, b, h, w = getImageMatrix(name + ".png")
         d = {
             'r': r,
             'g': g,
@@ -415,22 +447,22 @@ def reconstructHeader(fileNames, k):
     solve for header
     '''
     parts = [[] for i in range(k)]
-    limit = int((math.ceil(float(19)/k) * k) + 1)
+    limit = int((math.ceil(float(19) / k) * k) + 1)
     for idx, s in enumerate(shares):
-        a = s['r'] # Only need one component of one image to construct RHS
+        a = s['r']  # Only need one component of one image to construct RHS
         for count in range(limit):
-            parts[idx].append(a[(count+1)*w-1])
+            parts[idx].append(a[(count + 1) * w - 1])
     # Putting them in order of shares...
     parts.sort(key=lambda x: int(x[0]))
     rhs = [[] for i in range(k)]
     actualParts = [[] for i in range(k)]
     final = [[] for i in range(k)]
     for idx, p in enumerate(parts):
-        shareNumbers.append(p[0]-1)
+        shareNumbers.append(p[0] - 1)
         actualParts[idx] = p[1:]
     for idx, p in enumerate(actualParts):
         for i in range(0, len(p), k):
-            final[idx].append(p[i:i+k])
+            final[idx].append(p[i:i + k])
     rhs = [[] for i in range(len(final[0]))]
     for f in final:
         for idx, l in enumerate(f):
@@ -445,7 +477,7 @@ def reconstructHeader(fileNames, k):
         r = [[num] for num in r]
         r = np.matrix(r)
 
-        lhs = [redShares[i][pos*k:(pos+1)*k] for i in range(k)]
+        lhs = [redShares[i][pos * k:(pos + 1) * k] for i in range(k)]
         lhs = np.matrix(lhs)
         H = np.linalg.solve(lhs, r)
         prods.append(H)
@@ -485,41 +517,47 @@ if __name__ == "__main__":
         width = size[1]
         height = size[0]
 
-        noTouch = [(r * width) - 1 for r in range(1, height+1)]
+        noTouch = [(r * width) - 1 for r in range(1, height + 1)]
         for idx, r in enumerate(reds):
             for pos, num in enumerate(r):
                 if pos not in noTouch:
                     reds_final[idx].append(num)
 
-        m = expandMatrix(reds_final, recovered_key, recovered_size, shareNumbers)
-        ansRed = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
+        m = expandMatrix(reds_final, recovered_key,
+                         recovered_size, shareNumbers)
+        ansRed = final_combination(
+            m, recovered_key, width - 1, recovered_size / (width - 1))
 
         prev = 0
         greens = [s['g'] for s in shares]
         greens_final = [[] for i in range(len(greens))]
 
-        noTouch = [(r * width) - 1 for r in range(1, height+1)]
+        noTouch = [(r * width) - 1 for r in range(1, height + 1)]
         for idx, r in enumerate(greens):
             for pos, num in enumerate(r):
                 if pos not in noTouch:
                     greens_final[idx].append(num)
-        
-        m = expandMatrix(greens_final, recovered_key, recovered_size, shareNumbers)
-        ansGreen = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
+
+        m = expandMatrix(greens_final, recovered_key,
+                         recovered_size, shareNumbers)
+        ansGreen = final_combination(
+            m, recovered_key, width - 1, recovered_size / (width - 1))
 
         prev = 0
         blues = [s['b'] for s in shares]
         # Removing last column
         blues_final = [[] for i in range(len(blues))]
 
-        noTouch = [(r * width) - 1 for r in range(1, height+1)]
+        noTouch = [(r * width) - 1 for r in range(1, height + 1)]
         for idx, r in enumerate(blues):
             for pos, num in enumerate(r):
                 if pos not in noTouch:
                     blues_final[idx].append(num)
-        
-        m = expandMatrix(blues_final, recovered_key, recovered_size, shareNumbers)
-        ansBlue = final_combination(m, recovered_key, width-1, recovered_size/(width-1))
+
+        m = expandMatrix(blues_final, recovered_key,
+                         recovered_size, shareNumbers)
+        ansBlue = final_combination(
+            m, recovered_key, width - 1, recovered_size / (width - 1))
 
         width -= 1
         height = recovered_size / width
